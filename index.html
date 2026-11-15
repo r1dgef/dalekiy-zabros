@@ -32,12 +32,13 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 <canvas id="cv" width="800" height="450" aria-label="Fishing"></canvas>
 <div class="row"><button class="sell" id="sell"></button><button class="sell alt" id="dbl"></button></div>
 <div class="ups"><button class="up" id="u0"></button><button class="up" id="u1"></button><button class="up" id="u2"></button></div>
+<div class="row"><button class="sell alt" id="lb"></button><button class="sell alt" id="inv"></button></div>
 </main>
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s),R=Math.random;
-const D={ru:{ti:'Далёкий заброс',sell:'Продать улов',dbl:'×2 за рекламу',u0:'Сила броска',u1:'Крючки',u2:'Удача',lv:'ур. ',hint:'Зажмите и отпустите, чтобы забросить',short:'Не долетело',newz:'Новая зона: ',best:'Рекорд ',max:'МАКС',z:['Мелководье','Бухта','Открытое море','Глубина','Бездна']},
-en:{ti:'Far Cast',sell:'Sell catch',dbl:'×2 with an ad',u0:'Throw power',u1:'Hooks',u2:'Luck',lv:'lv ',hint:'Hold and release to cast',short:'Too short',newz:'New zone: ',best:'Best ',max:'MAX',z:['Shallows','Bay','Open sea','Deep','Abyss']}};
+const D={ru:{ti:'Далёкий заброс',sell:'Продать улов',dbl:'×2 за рекламу',u0:'Сила броска',u1:'Крючки',u2:'Удача',lv:'ур. ',hint:'Зажмите и отпустите, чтобы забросить',short:'Не долетело',storm:'Шторм',night:'Ночь',stormt:'Шторм! Улов ×2, шкала быстрее',nightt:'Ночь! Редкая рыба чаще',evend:'Событие закончилось',daily:'Ежедневный бонус: +',lb:'Рейтинг друзей',inv:'Позвать друзей',lberr:'Рейтинг пока недоступен',newz:'Новая зона: ',best:'Рекорд ',max:'МАКС',z:['Мелководье','Бухта','Открытое море','Глубина','Бездна']},
+en:{ti:'Far Cast',sell:'Sell catch',dbl:'×2 with an ad',u0:'Throw power',u1:'Hooks',u2:'Luck',lv:'lv ',hint:'Hold and release to cast',short:'Too short',storm:'Storm',night:'Night',stormt:'Storm! Catch ×2, faster meter',nightt:'Night! Rare fish more often',evend:'Event is over',daily:'Daily bonus: +',lb:'Friends ranking',inv:'Invite friends',lberr:'Ranking is not available yet',newz:'New zone: ',best:'Best ',max:'MAX',z:['Shallows','Bay','Open sea','Deep','Abyss']}};
 let lang='ru';const M=()=>lang==='ru'?' м':' m';const T=k=>D[lang][k];
 /* Реклама: VK Bridge (VK Mini Apps). Вне VK — заглушки для локальной проверки */
 const VK=window.vkBridge;
@@ -63,7 +64,7 @@ const cv=$('#cv'),g=cv.getContext('2d'),W=800,H=450,WY=270,PX=90;
 const ZS=[40,200,500,1000,2000];
 const FISH=[[['🐟',2],['🦐',3],['🐚',6]],[['🐠',7],['🦀',10],['🐡',16]],[['🦑',22],['🐙',30],['🐢',48]],[['🦈',65],['🐬',95],['🦭',140]],[['🐋',210],['🦞',380],['💎',1200]]];
 const ZC=['#3bb4a6','#2a8fa6','#1f6a99','#16406b','#0c1f3d'];
-let S={money:0,bag:0,n:0,st:0,hk:0,lk:0,best:0,zone:0};
+let S={money:0,bag:0,n:0,st:0,hk:0,lk:0,best:0,zone:0,casts:0,day:'',ds:0};
 try{Object.assign(S,JSON.parse(localStorage.getItem('df')||'{}'))}catch(e){}
 const save=()=>{try{localStorage.setItem('df',JSON.stringify(S))}catch(e){}};
 const maxD=()=>90+60*S.st,view=()=>maxD()*1.12,sx=d=>PX+d/view()*(W-PX-30);
@@ -76,31 +77,35 @@ function ui(){
   $('#bg').innerHTML='🎒 '+S.n+' · '+S.bag+' <small>'+T('best')+S.best+M()+'</small>';
   $('#sell').textContent=T('sell')+(S.bag?' +'+S.bag:'');$('#sell').disabled=!S.bag;
   $('#dbl').textContent=T('dbl')+(S.bag?' +'+S.bag*2:'');$('#dbl').disabled=!S.bag;
+  if($('#lb')){$('#lb').textContent=T('lb');$('#inv').textContent=T('inv')}
   KEYS.forEach((k,i)=>{const b=$('#u'+i),mx=S[k]>=CAP[i];
     b.innerHTML='<b>'+T('u'+i)+'</b><span>'+T('lv')+(S[k]+1)+' · '+info(i)+'</span><em>'+(mx?T('max'):'💰 '+cost(i))+'</em>';
     b.disabled=mx||S.money<cost(i)});
 }
 function toast(m){const e=$('#toast');e.textContent=m;e.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove('on'),2200)}
 
-let ph='idle',t=0,p=0,dir=1,Dd=0,msg=null,time=0,last=0;
+let ph='idle',t=0,p=0,dir=1,Dd=0,msg=null,time=0,last=0,ev=null;
 function begin(){if(ph==='idle'){ph='charge';p=0;dir=1}}
 function release(){if(ph==='charge'){Dd=p*maxD();ph='fly';t=0}}
 function resolve(){
   const z=ZS.reduce((a,b,i)=>Dd>=b?i:a,-1);
   if(z<0)msg={x:sx(Dd),txt:'💨 '+T('short')};
   else{
-    const k=1+S.hk,w1=Math.max(.3,.72-.05*S.lk),w2=w1+.22+.02*S.lk;let sum=0,em='';
+    const lk=S.lk+(ev&&ev.t==='night'?4:0),k=1+S.hk,w1=Math.max(.3,.72-.05*lk),w2=w1+.22+.02*lk;let sum=0,em='';
     for(let i=0;i<k;i++){const r=R(),f=FISH[z][r<w1?0:r<w2?1:2];sum+=f[1];em+=f[0]}
-    S.bag+=sum;S.n+=k;msg={x:sx(Dd),txt:em+'  +'+sum};
+    if(ev&&ev.t==='storm')sum*=2;S.bag+=sum;S.n+=k;msg={x:sx(Dd),txt:em+'  +'+sum};
     S.best=Math.max(S.best,Math.round(Dd));
     if(z>S.zone){S.zone=z;toast(T('newz')+T('z')[z]);Ads.inter(()=>{})}
     save();ui();
   }
-  ph='res';t=0;
+  ph='res';t=0;S.casts++;
+  if(ev){if(--ev.left<=0){toast(T('evend'));ev=null}}
+  else if(S.casts>=5&&R()<.2){ev={t:R()<.5?'storm':'night',left:5};toast(T(ev.t+'t'))}
+  save();
 }
 function loop(ts){
   const dt=Math.min(.05,(ts-last)/1000||0);last=ts;time+=dt;
-  if(ph==='charge'){p+=dir*dt*1.1;if(p>=1){p=1;dir=-1}if(p<=0){p=0;dir=1}}
+  if(ph==='charge'){p+=dir*dt*1.1*(ev&&ev.t==='storm'?1.6:1);if(p>=1){p=1;dir=-1}if(p<=0){p=0;dir=1}}
   else if(ph==='fly'){t+=dt/.85;if(t>=1){t=0;ph='wait'}}
   else if(ph==='wait'){t+=dt;if(t>.7)resolve()}
   else if(ph==='res'){t+=dt;if(t>1.6)ph='idle'}
@@ -130,6 +135,11 @@ function draw(){
   if(lu){g.strokeStyle='#fff9';g.lineWidth=1;g.beginPath();g.moveTo(tx,ty);g.lineTo(lu[0],lu[1]);g.stroke();
     g.fillStyle='#e63946';g.beginPath();g.arc(lu[0],lu[1],5,0,7);g.fill()}
   if(ph==='wait'&&Dd>=ZS[0]){g.strokeStyle='#fff';g.globalAlpha=1-t/.7;g.beginPath();g.ellipse(lx,WY+3,10+t*50,3+t*10,0,0,7);g.stroke();g.globalAlpha=1}
+  if(ev){
+    if(ev.t==='night'){g.fillStyle='#0a1030aa';g.fillRect(0,0,W,H)}
+    else{g.fillStyle='#3a4458aa';g.fillRect(0,0,W,H);g.strokeStyle='#cfe3ff99';g.lineWidth=1;for(let i=0;i<60;i++){const x=(i*97+time*300)%W,y=(i*53+time*500)%H;g.beginPath();g.moveTo(x,y);g.lineTo(x-6,y+16);g.stroke()}}
+    g.fillStyle='#fff';g.font='bold 16px system-ui';g.fillText((ev.t==='storm'?'⛈ ':'🌙 ')+T(ev.t)+' · '+ev.left,12,24);g.font='14px system-ui';
+  }
   if(ph==='charge'){
     const ax=sx(p*maxD());g.strokeStyle='#ffc857';g.lineWidth=2;g.setLineDash([5,5]);g.beginPath();g.moveTo(ax,WY-50);g.lineTo(ax,WY+70);g.stroke();g.setLineDash([]);
     g.fillStyle='#ffc857';g.textAlign='center';g.fillText(Math.round(p*maxD())+M(),ax,WY-58);g.textAlign='left';
@@ -147,7 +157,11 @@ addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat){e.preventDefault(
 addEventListener('keyup',e=>{if(e.code==='Space')release()});
 $('#sell').onclick=()=>{S.money+=S.bag;S.bag=0;S.n=0;save();ui()};
 $('#dbl').onclick=()=>Ads.reward(()=>{S.money+=S.bag*2;S.bag=0;S.n=0;save();ui()});
+$('#inv').onclick=()=>{if(VK)VK.send('VKWebAppShare',{link:'https://vk.com/app54899177'}).catch(()=>{});else toast('VK')};
+$('#lb').onclick=()=>{if(VK)VK.send('VKWebAppShowLeaderBoardBox',{user_result:Math.max(1,Math.round(S.best))}).catch(()=>toast(T('lberr')));else toast('VK')};
 KEYS.forEach((k,i)=>$('#u'+i).onclick=()=>{const c=cost(i);if(S.money>=c&&S[k]<CAP[i]){S.money-=c;S[k]++;save();ui()}});
+const today=new Date().toISOString().slice(0,10);
+if(S.day!==today){const y=new Date(Date.now()-864e5).toISOString().slice(0,10);S.ds=S.day===y?Math.min(S.ds+1,6):0;S.day=today;const b=50+25*S.ds+10*S.st;S.money+=b;save();setTimeout(()=>toast(T('daily')+b),600)}
 ui();requestAnimationFrame(loop);
 </script>
 </body>
